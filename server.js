@@ -2,6 +2,7 @@ const express = require('express');
 const useragent = require('express-useragent');
 const axios = require('axios');
 const path = require('path');
+const basicAuth = require('express-basic-auth');
 
 const app = express();
 const PORT = 3000;
@@ -9,6 +10,14 @@ const PORT = 3000;
 app.use(useragent.express());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
+
+// Secure Dashboard with Username and Password
+// NOTE: Apni marzi ka username aur secure password yahan set kar lein
+const dashboardAuth = basicAuth({
+    users: { 'admin': 'SuperSecretPassword123' },
+    challenge: true,
+    realm: 'Honeypot-Admin-Area'
+});
 
 // Array to store logs in memory
 let attackLogs = [];
@@ -57,20 +66,20 @@ async function logVisitor(req, actionType = 'Page Visit') {
     console.log('--------------------------------------------------');
 }
 
-// Serve login page
+// Serve login page (Public honeypot trap)
 app.get('/', async (req, res) => {
     await logVisitor(req, 'Page Visit');
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Capture credentials
+// Capture credentials from trap page
 app.post('/login', async (req, res) => {
     await logVisitor(req, 'Credentials Captured');
     res.send('<h2>Access Denied</h2><p>Invalid credentials or unauthorized attempt logged.</p>');
 });
 
-// API endpoint to send logs to dashboard
-app.get('/api/logs', (req, res) => {
+// Protected API endpoint for logs (Requires Admin Login)
+app.get('/api/logs', dashboardAuth, (req, res) => {
     const creds = attackLogs.filter(log => log.credentials !== null);
     res.json({
         visits: visitCount,
@@ -79,12 +88,12 @@ app.get('/api/logs', (req, res) => {
     });
 });
 
-// Dashboard route
-app.get('/dashboard', (req, res) => {
+// Protected Dashboard route (Requires Admin Login)
+app.get('/dashboard', dashboardAuth, (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
 });
 
 app.listen(PORT, () => {
     console.log(`Honeypot Server running on port ${PORT}`);
-    console.log(`Access Dashboard at: http://localhost:${PORT}/dashboard`);
+    console.log(`Secure Dashboard at: http://localhost:${PORT}/dashboard`);
 });
