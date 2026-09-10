@@ -2,17 +2,31 @@ const express = require('express');
 const basicAuth = require('express-basic-auth');
 const useragent = require('express-useragent');
 const axios = require('axios');
+const fs = require('fs');
 const path = require('path');
 
 const app = express();
 const PORT = 4000;
+const LOG_FILE = path.join(__dirname, 'logs.json');
 
 // Middleware setup
 app.use(useragent.express());
 app.use(express.urlencoded({ extended: true }));
 
-// Store captured logs in memory
-const logs = [];
+// Helper function to read and append logs to file
+function saveLog(newLog) {
+    let logs = [];
+    if (fs.existsSync(LOG_FILE)) {
+        try {
+            const data = fs.readFileSync(LOG_FILE, 'utf8');
+            logs = JSON.parse(data);
+        } catch (err) {
+            logs = [];
+        }
+    }
+    logs.push(newLog);
+    fs.writeFileSync(LOG_FILE, JSON.stringify(logs, null, 2));
+}
 
 // Public Trap Page (Root)
 app.get('/', async (req, res) => {
@@ -27,14 +41,17 @@ app.get('/', async (req, res) => {
         console.error('IP lookup failed:', err.message);
     }
 
-    logs.push({
+    const logEntry = {
         time: new Date().toISOString(),
         ip,
         browser: ua.browser,
         os: ua.os,
         device: ua.platform,
         location: geoData
-    });
+    };
+
+    // Save to file instead of memory array
+    saveLog(logEntry);
 
     res.send(`
         <!DOCTYPE html>
@@ -56,13 +73,17 @@ app.post('/login', (req, res) => {
     res.send('<h3>Authentication Failed. Please try again.</h3>');
 });
 
-// Protected Admin Dashboard
+// Protected Admin Dashboard (Reads directly from file)
 app.get('/dashboard', basicAuth({
     users: { 'admin': 'SuperSecretPassword123' },
     challenge: true,
     realm: 'HoneypotAdminArea'
 }), (req, res) => {
-    res.json(logs);
+    if (fs.existsSync(LOG_FILE)) {
+        res.sendFile(LOG_FILE);
+    } else {
+        res.json([]);
+    }
 });
 
 // Start Server
