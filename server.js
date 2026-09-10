@@ -76,7 +76,7 @@ app.post('/login', async (req, res) => {
     res.send('<h3>Authentication Failed. Please try again.</h3>');
 });
 
-// Protected Admin Dashboard with Location Columns
+// Protected Admin Dashboard with Download Button & Location Columns
 app.get('/dashboard', basicAuth({
     users: { 'admin': 'SuperSecretPassword123' },
     challenge: true,
@@ -114,15 +114,20 @@ app.get('/dashboard', basicAuth({
             <title>Honeypot Dashboard</title>
             <style>
                 body { font-family: Arial, sans-serif; margin: 30px; background: #f4f4f9; color: #333; }
-                h2 { color: #2c3e50; }
-                table { width: 100%; border-collapse: collapse; background: #fff; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-top: 20px; border-radius: 5px; overflow: hidden; }
+                h2 { color: #2c3e50; display: inline-block; }
+                .btn { background-color: #27ae60; color: white; padding: 10px 15px; text-decoration: none; border-radius: 4px; float: right; font-weight: bold; }
+                .btn:hover { background-color: #219653; }
+                table { width: 100%; border-collapse: collapse; background: #fff; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-top: 20px; border-radius: 5px; overflow: hidden; clear: both; }
                 th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #ddd; }
                 th { background-color: #2c3e50; color: white; }
                 tr:hover { background-color: #f1f1f1; }
             </style>
         </head>
         <body>
-            <h2>Captured Credentials & Visitor Logs</h2>
+            <div>
+                <h2>Captured Credentials & Visitor Logs</h2>
+                <a href="/dashboard/download" class="btn">Download Logs (JSON)</a>
+            </div>
             <p>Total Captures: <strong>${logs.length}</strong></p>
             <table>
                 <thead>
@@ -142,6 +147,19 @@ app.get('/dashboard', basicAuth({
         </body>
         </html>
     `);
+});
+
+// Protected Route to Download the JSON File
+app.get('/dashboard/download', basicAuth({
+    users: { 'admin': 'SuperSecretPassword123' },
+    challenge: true,
+    realm: 'HoneypotAdminArea'
+}), (req, res) => {
+    if (fs.existsSync(LOG_FILE)) {
+        res.download(LOG_FILE);
+    } else {
+        res.status(404).send('No logs found to download.');
+    }
 });
 
 // Start Server
