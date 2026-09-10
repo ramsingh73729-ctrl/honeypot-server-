@@ -1,99 +1,71 @@
 const express = require('express');
+const basicAuth = require('express-basic-auth');
 const useragent = require('express-useragent');
 const axios = require('axios');
 const path = require('path');
-const basicAuth = require('express-basic-auth');
 
 const app = express();
-const PORT = 3000;
+const PORT = 4000;
 
+// Middleware setup
 app.use(useragent.express());
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static('public'));
 
-// Secure Dashboard with Username and Password
-// NOTE: Apni marzi ka username aur secure password yahan set kar lein
-const dashboardAuth = basicAuth({
+// Store captured logs in memory
+const logs = [];
+
+// Public Trap Page (Root)
+app.get('/', async (req, res) => {
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    const ua = req.useragent;
+    
+    let geoData = {};
+    try {
+        const response = await axios.get(`http://ip-api.com/json/${ip}`);
+        geoData = response.data;
+    } catch (err) {
+        console.error('IP lookup failed:', err.message);
+    }
+
+    logs.push({
+        time: new Date().toISOString(),
+        ip,
+        browser: ua.browser,
+        os: ua.os,
+        device: ua.platform,
+        location: geoData
+    });
+
+    res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Login Portal</title></head>
+        <body style="font-family: Arial, sans-serif; text-align: center; margin-top: 50px;">
+            <h2>System Login</h2>
+            <form action="/login" method="POST">
+                <input type="text" name="username" placeholder="Username" required style="padding: 8px; margin: 5px;"/><br>
+                <input type="password" name="password" placeholder="Password" required style="padding: 8px; margin: 5px;"/><br>
+                <button type="submit" style="padding: 8px 15px; margin-top: 10px;">Sign In</button>
+            </form>
+        </body>
+        </html>
+    `);
+});
+
+app.post('/login', (req, res) => {
+    res.send('<h3>Authentication Failed. Please try again.</h3>');
+});
+
+// Protected Admin Dashboard
+app.get('/dashboard', basicAuth({
     users: { 'admin': 'SuperSecretPassword123' },
     challenge: true,
-    realm: 'Honeypot-Admin-Area'
+    realm: 'HoneypotAdminArea'
+}), (req, res) => {
+    res.json(logs);
 });
 
-// Array to store logs in memory
-let attackLogs = [];
-let visitCount = 0;
-
-async function logVisitor(req, actionType = 'Page Visit') {
-    let clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-    if (clientIp && clientIp.includes(',')) {
-        clientIp = clientIp.split(',')[0].trim();
-    }
-
-    let geoInfo = { country: 'Local / Unknown', city: 'Local / Unknown', isp: 'Local / Unknown' };
-    
-    try {
-        if (clientIp && clientIp !== '::1' && clientIp !== '127.0.0.1') {
-            const response = await axios.get(`http://ip-api.com/json/${clientIp}`);
-            if (response.data.status === 'success') {
-                geoInfo = response.data;
-            }
-        }
-    } catch (error) {
-        // Fallback
-    }
-
-    const logEntry = {
-        time: new Date().toLocaleTimeString(),
-        action: actionType,
-        ip: clientIp,
-        country: geoInfo.country,
-        city: geoInfo.city,
-        isp: geoInfo.isp,
-        browser: req.useragent.browser,
-        os: req.useragent.os,
-        credentials: (req.body && req.body.username) ? { username: req.body.username, password: req.body.password } : null
-    };
-
-    attackLogs.push(logEntry);
-    if (actionType.includes('Visit')) visitCount++;
-
-    console.log(`\n[ALERT] ${actionType}!`);
-    console.log(`IP Address : ${clientIp}`);
-    console.log(`Location   : ${geoInfo.city}, ${geoInfo.country}`);
-    if (logEntry.credentials) {
-        console.log(`Credentials: User='${logEntry.credentials.username}' | Pass='${logEntry.credentials.password}'`);
-    }
-    console.log('--------------------------------------------------');
-}
-
-// Serve login page (Public honeypot trap)
-app.get('/', async (req, res) => {
-    await logVisitor(req, 'Page Visit');
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-// Capture credentials from trap page
-app.post('/login', async (req, res) => {
-    await logVisitor(req, 'Credentials Captured');
-    res.send('<h2>Access Denied</h2><p>Invalid credentials or unauthorized attempt logged.</p>');
-});
-
-// Protected API endpoint for logs (Requires Admin Login)
-app.get('/api/logs', dashboardAuth, (req, res) => {
-    const creds = attackLogs.filter(log => log.credentials !== null);
-    res.json({
-        visits: visitCount,
-        credentials: creds,
-        logs: attackLogs
-    });
-});
-
-// Protected Dashboard route (Requires Admin Login)
-app.get('/dashboard', dashboardAuth, (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
-});
-
+// Start Server
 app.listen(PORT, () => {
     console.log(`Honeypot Server running on port ${PORT}`);
-    console.log(`Secure Dashboard at: http://localhost:${PORT}/dashboard`);
 });
