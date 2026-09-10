@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Honeypot Security Dashboard</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0f172a; color: #f8fafc; margin: 0; padding: 20px; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        h1 { color: #38bdf8; border-bottom: 2px solid #334155; padding-bottom: 10px; }
+        .stats { display: flex; gap: 20px; margin-bottom: 20px; }
+        .card { background: #1e293b; padding: 20px; border-radius: 8px; flex: 1; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        .card h3 { margin: 0 0 10px 0; color: #94a3b8; font-size: 14px; }
+        .card p { margin: 0; font-size: 24px; font-weight: bold; color: #38bdf8; }
+        table { width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #334155; font-size: 14px; }
+        th { background: #334155; color: #f1f5f9; }
+        tr:hover { background: #273548; }
+        .cred { color: #f43f5e; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🛡️ Honeypot Attack Dashboard</h1>
+        <div class="stats">
+            <div class="card">
+                <h3>Total Visits</h3>
+                <p id="totalVisits">0</p>
+            </div>
+            <div class="card">
+                <h3>Credentials Captured</h3>
+                <p id="totalCreds">0</p>
+            </div>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Action</th>
+                    <th>IP Address</th>
+                    <th>Location</th>
+                    <th>Browser</th>
+                    <th>Credentials</th>
+                </tr>
+            </thead>
+            <tbody id="logTable">
+                <!-- Data will load here dynamically -->
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        async function fetchLogs() {
+            try {
+                const response = await fetch('/api/logs');
+                const data = await response.json();
+                
+                document.getElementById('totalVisits').innerText = data.visits;
+                document.getElementById('totalCreds').innerText = data.credentials.length;
+
+                const tableBody = document.getElementById('logTable');
+                tableBody.innerHTML = '';
+
+                // Combine and show logs newest first
+                const allLogs = [...data.logs].reverse();
+
+                allLogs.forEach(log => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${log.time}</td>
+                        <td>${log.action}</td>
+                        <td>${log.ip}</td>
+                        <td>${log.city}, ${log.country}</td>
+                        <td>${log.browser} (${log.os})</td>
+                        <td class="cred">${log.credentials ? `User: ${log.credentials.username} / Pass: ${log.credentials.password}` : '-'}</td>
+                    `;
+                    tableBody.appendChild(row);
+                });
+            } catch (err) {
+                console.error('Error fetching logs:', err);
+            }
+        }
+
+        // Fetch logs every 3 seconds
+        setInterval(fetchLogs, 3000);
+        fetchLogs();
+    </script>
+</body>
+</html>
