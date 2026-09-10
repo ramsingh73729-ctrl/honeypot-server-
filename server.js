@@ -92,3 +92,51 @@ app.get('/dashboard', basicAuth({
         </html>
     `);
 });
+// Decoy Document / Canary Token Route
+app.get('/download/confidential-report.pdf', async (req, res) => {
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    const ua = req.useragent;
+
+    let geoData = {};
+    try {
+        const response = await axios.get(`http://ip-api.com/json/${ip}`);
+        geoData = response.data;
+    } catch (err) {
+        console.error('IP lookup failed:', err.message);
+    }
+
+    const logEntry = {
+        time: new Date().toLocaleString(),
+        ip,
+        username: 'TRAP_TRIGGERED (Decoy File Download)',
+        password: 'N/A',
+        browser: ua.browser,
+        os: ua.os,
+        device: ua.platform,
+        location: geoData
+    };
+
+    // Log save karein
+    saveLog(logEntry);
+    
+    // Special Canary Alert Telegram par bhejein
+    if (TELEGRAM_BOT_TOKEN !== 'YOUR_BOT_TOKEN_HERE') {
+        const alertMessage = `⚠️ *CANARY TOKEN TRIGGERED!*\n\n` +
+                             `📁 *Kisi ne fake confidential report access karne ki koshish ki!*\n` +
+                             `🌐 *IP:* ${ip}\n` +
+                             `📍 *Location:* ${geoData.city || 'N/A'}, ${geoData.country || 'N/A'}\n` +
+                             `💻 *Device:* ${ua.browser} / ${ua.os}`;
+        try {
+            await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+                chat_id: TELEGRAM_CHAT_ID,
+                text: alertMessage,
+                parse_mode: 'Markdown'
+            });
+        } catch (err) {
+            console.error('Telegram alert failed:', err.message);
+        }
+    }
+
+    // Attacker ko lage ki file protected ya restricted hai
+    res.status(403).send('<h2>403 Forbidden</h2><p>You do not have administrative privileges to access this document.</p>');
+});
