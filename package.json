@@ -1,7 +1,14 @@
-cd ~/honeypot-server
-npm init -y
-npm install express express-useragent axios
-npm pkg set scripts.start="node server.js"
-git add -A
-git commit -m "Ensure package.json is in root"
-git push origin main
+{
+  "name": "honeypot-server",
+  "version": "1.0.0",
+  "description": "Honeypot Server",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "express": "^4.18.2",
+    "express-useragent": "^1.0.15"
+  }
+}
